@@ -10,6 +10,7 @@ import typer
 
 from .config import Config, setup_logging
 from .scraper import MatchListScraper, MatchDetailScraper
+from .scraper.match_list import MatchListScraperTLS
 from .exporters import get_exporter
 from .constants import FLASHSCORE_FOOTBALL_URL
 
@@ -86,20 +87,16 @@ async def run_scraper(config: Config):
         console.print(f"Proxy:       [cyan]{proxy_display}[/cyan]")
     console.print()
 
-    # Initialize scrapers
-    match_list_scraper = MatchListScraper(
-        headless=config.headless,
+    # Initialize scrapers (use TLS client for match list - faster and more reliable)
+    match_list_scraper = MatchListScraperTLS(
         proxy_url=config.proxy_url,
-        timeout=config.timeout,
+        timeout=config.timeout // 1000,  # Convert to seconds
     )
 
     match_detail_scraper = MatchDetailScraper(
         proxy_url=config.proxy_url,
         timeout=config.timeout // 1000,  # Convert to seconds
     )
-
-    # Create browser context for match list
-    playwright, browser, context = await match_list_scraper.create_context()
 
     try:
         # Build league URL
@@ -110,13 +107,13 @@ async def run_scraper(config: Config):
 
         logger.info(f"League URL: {league_url}")
 
-        # Get all match links
+        # Get all match links using tls_client (faster, bypasses Cloudflare better)
         with console.status("[yellow]📋 Loading match list...[/yellow]"):
             results_matches = await match_list_scraper.get_match_links(
-                context, league_url, "results"
+                league_url, "results"
             )
             fixture_matches = await match_list_scraper.get_match_links(
-                context, league_url, "fixtures"
+                league_url, "fixtures"
             )
 
         all_matches = results_matches + fixture_matches
@@ -209,9 +206,7 @@ async def run_scraper(config: Config):
         print_summary(matches_data)
 
     finally:
-        await context.close()
-        await browser.close()
-        await playwright.stop()
+        await match_list_scraper.close()
         await match_detail_scraper.close()
 
 
