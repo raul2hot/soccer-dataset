@@ -95,10 +95,17 @@ class TLSClientScraper(ABC):
         self.logger.debug(f"Fetching: {url}")
 
         # Run sync request in executor to not block async loop
+        # Note: tls_client doesn't support timeout parameter directly
+        # We use asyncio.wait_for to handle timeout at the async level
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, lambda: self.session.get(url, timeout=self.timeout)
-        )
+
+        try:
+            response = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: self.session.get(url)),
+                timeout=self.timeout
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"Request to {url} timed out after {self.timeout}s")
 
         if response.status_code not in [200, 301, 302]:
             raise Exception(f"HTTP {response.status_code} for {url}")
