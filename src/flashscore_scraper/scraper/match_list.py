@@ -4,13 +4,90 @@ import re
 from typing import List, Dict
 from urllib.parse import urljoin
 
-from .base import BaseScraper
+from .base import BaseScraper, TLSClientScraper
 from ..constants import FLASHSCORE_BASE_URL, Selectors
 from ..utils.parsing import extract_match_id
 
 
+class MatchListScraperTLS(TLSClientScraper):
+    """Scrapes list of matches using tls_client (faster, better for Cloudflare)."""
+
+    async def get_match_links(
+        self, league_url: str, tab: str = "results"
+    ) -> List[Dict[str, str]]:
+        """
+        Get all match links from a league page using tls_client.
+
+        Args:
+            league_url: League URL
+            tab: Tab to scrape - 'results' or 'fixtures'
+
+        Returns:
+            List of dicts with 'id' and 'url' keys
+        """
+        # Build URL with tab
+        if tab == "results":
+            url = f"{league_url}results/"
+        elif tab == "fixtures":
+            url = f"{league_url}fixtures/"
+        else:
+            url = league_url
+
+        self.logger.info(f"Fetching {tab} from: {url}")
+
+        # Fetch HTML using tls_client
+        soup = await self.fetch_soup(url)
+
+        # Extract match links from HTML
+        matches = []
+
+        # Find all match rows
+        # Flashscore uses various class names, try multiple patterns
+        match_elements = soup.find_all("div", class_=re.compile(r"event__match"))
+
+        if not match_elements:
+            # Try alternative selector
+            match_elements = soup.find_all(class_=re.compile(r"sportName.*event"))
+
+        self.logger.info(f"Found {len(match_elements)} match elements")
+
+        for element in match_elements:
+            # Find link within match element
+            link_el = element.find("a")
+            if not link_el:
+                continue
+
+            href = link_el.get("href")
+            if not href:
+                continue
+
+            # Build full URL
+            match_url = urljoin(FLASHSCORE_BASE_URL, href)
+
+            # Extract match ID
+            match_id = extract_match_id(match_url)
+            if not match_id:
+                # Try to extract from element ID
+                element_id = element.get("id", "")
+                if element_id.startswith("g_1_"):
+                    match_id = element_id.replace("g_1_", "")
+                else:
+                    # Try to extract from href
+                    parts = href.split("/")
+                    for part in parts:
+                        if len(part) > 5 and not part.isalpha():
+                            match_id = part.rstrip("#")
+                            break
+
+            if match_id:
+                matches.append({"id": match_id, "url": match_url})
+
+        self.logger.info(f"Extracted {len(matches)} match links")
+        return matches
+
+
 class MatchListScraper(BaseScraper):
-    """Scrapes list of matches from a league page."""
+    """Scrapes list of matches from a league page using Playwright."""
 
     async def get_match_links(
         self, context, league_url: str, tab: str = "results"
