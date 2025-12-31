@@ -14,11 +14,11 @@ from .exporters import get_exporter
 from .constants import FLASHSCORE_FOOTBALL_URL
 
 console = Console()
-app = typer.Typer(help="⚽ Flashscore ML Dataset Scraper")
+app = typer.Typer(help="⚽ Flashscore ML Dataset Scraper", no_args_is_help=True)
 
 
-@app.command()
-def scrape(
+@app.command(name="scrape")
+def scrape_command(
     country: str = typer.Argument(..., help="Country name (e.g., 'england')"),
     league: str = typer.Argument(..., help="League slug (e.g., 'premier-league')"),
     season: str = typer.Option(None, help="Season (e.g., '2023-2024'). If not specified, scrapes current season"),
@@ -33,11 +33,12 @@ def scrape(
     """
     Scrape soccer match data from Flashscore.
 
-    Example:
-        flashscore-scraper england premier-league --season 2023-2024
+    Examples:
+        python -m src.flashscore_scraper england premier-league --season 2023-2024
+        python -m src.flashscore_scraper scrape england premier-league --season 2023-2024
 
     Example with proxy:
-        flashscore-scraper spain laliga --proxy "http://user:pass@proxy.com:8080"
+        python -m src.flashscore_scraper spain laliga --proxy "http://user:pass@proxy.com:8080"
     """
     # Setup logging
     log_level = "DEBUG" if verbose else "INFO"
@@ -312,5 +313,18 @@ def test_proxy(
     asyncio.run(_test())
 
 
+def main():
+    """Main entry point with smart command detection."""
+    import sys
+
+    # If no arguments or first arg is a known command, use typer normally
+    if len(sys.argv) == 1 or sys.argv[1] in ['scrape', 'test-proxy', '--help', '-h']:
+        app()
+    else:
+        # First argument looks like a country name - inject 'scrape' command
+        sys.argv.insert(1, 'scrape')
+        app()
+
+
 if __name__ == "__main__":
-    app()
+    main()
